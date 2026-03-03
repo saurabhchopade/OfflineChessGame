@@ -53,11 +53,17 @@ const levelSelectEl = document.getElementById("levelSelect");
 const timeSelectEl = document.getElementById("timeSelect");
 const newGameBtn = document.getElementById("newGameBtn");
 const resignBtn = document.getElementById("resignBtn");
+const moveHistoryEl = document.getElementById("moveHistoryList");
 const gameOverModalEl = document.getElementById("gameOverModal");
 const modalTitleEl = document.getElementById("modalTitle");
 const modalTextEl = document.getElementById("modalText");
 const modalNewGameBtnEl = document.getElementById("modalNewGameBtn");
 const modalCloseBtnEl = document.getElementById("modalCloseBtn");
+const levelOptionEls = document.querySelectorAll("[data-level-option]");
+const timeOptionEls = document.querySelectorAll("[data-time-option]");
+const themeOptionEls = document.querySelectorAll("[data-theme-option]");
+
+const THEME_STORAGE_KEY = "offline-chess-theme";
 
 let state;
 let aiTable = new Map();
@@ -68,7 +74,7 @@ let aiClockIntervalId = null;
 let audioCtx = null;
 let aiTurnToken = 0;
 
-function createInitialState(level, timeControlSec) {
+function createInitialState(level, timeControlSec, isActive = true) {
   return {
     board: [
       ["bR", "bN", "bB", "bQ", "bK", "bB", "bN", "bR"],
@@ -85,7 +91,8 @@ function createInitialState(level, timeControlSec) {
     legalMovesForSelected: [],
     inCheck: { w: false, b: false },
     gameOver: false,
-    status: "White to move",
+    isActive,
+    status: "Your move",
     aiThinking: false,
     capturedByWhite: [],
     capturedByBlack: [],
@@ -132,10 +139,72 @@ function formatClock(seconds) {
 function updateClockUI() {
   whiteClockEl.textContent = formatClock(state.clocks.w);
   blackClockEl.textContent = formatClock(state.clocks.b);
-  whiteClockCardEl.classList.toggle("active", !state.gameOver && state.turn === "w");
-  blackClockCardEl.classList.toggle("active", !state.gameOver && state.turn === "b");
+  whiteClockCardEl.classList.toggle("active", state.isActive && !state.gameOver && state.turn === "w");
+  blackClockCardEl.classList.toggle("active", state.isActive && !state.gameOver && state.turn === "b");
   whiteClockCardEl.classList.toggle("low-time", state.clocks.w <= 20);
   blackClockCardEl.classList.toggle("low-time", state.clocks.b <= 20);
+}
+
+function updateOptionButtons() {
+  for (const button of levelOptionEls) {
+    const active = button.dataset.levelOption === state.level;
+    button.classList.toggle("active", active);
+    button.disabled = levelSelectEl.disabled;
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+
+  for (const button of timeOptionEls) {
+    const active = button.dataset.timeOption === String(state.timeControlSec);
+    button.classList.toggle("active", active);
+    button.disabled = timeSelectEl.disabled;
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+}
+
+function getSavedTheme() {
+  try {
+    const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return savedTheme === "light" || savedTheme === "dark" ? savedTheme : "dark";
+  } catch (_) {
+    return "dark";
+  }
+}
+
+function syncThemeButtons(theme) {
+  for (const button of themeOptionEls) {
+    const active = button.dataset.themeOption === theme;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+}
+
+function applyTheme(theme) {
+  const nextTheme = theme === "light" ? "light" : "dark";
+  document.body.dataset.theme = nextTheme;
+  syncThemeButtons(nextTheme);
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+  } catch (_) {
+    // Ignore storage failures in restricted environments.
+  }
+}
+
+function updateMoveHistoryUI() {
+  if (!moveHistoryEl) return;
+  if (!state.moveHistory.length) {
+    moveHistoryEl.textContent = "No moves yet";
+    return;
+  }
+
+  const rows = [];
+  for (let i = 0; i < state.moveHistory.length; i += 2) {
+    const whiteMove = state.moveHistory[i];
+    const blackMove = state.moveHistory[i + 1];
+    rows.push(`${Math.floor(i / 2) + 1}. ${whiteMove}${blackMove ? ` ${blackMove}` : ""}`);
+  }
+
+  const visibleRows = rows.slice(-8);
+  moveHistoryEl.innerHTML = visibleRows.map((row) => `<div class="history-row">${row}</div>`).join("");
 }
 
 function updateAdvantageBar() {
@@ -182,6 +251,16 @@ function stopAiClockTicker() {
   }
 }
 
+function yieldToBrowser() {
+  return new Promise((resolve) => {
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
+}
+
 function startClockTicker() {
   stopClockTicker();
   stopAiClockTicker();
@@ -218,7 +297,10 @@ function render() {
       sq.dataset.col = String(c);
 
       const piece = state.board[r][c];
-      if (piece) sq.textContent = PIECE_SYMBOLS[piece];
+      if (piece) {
+        sq.textContent = PIECE_SYMBOLS[piece];
+        sq.classList.add(colorOf(piece) === "w" ? "piece-white" : "piece-black");
+      }
       if (state.selected && state.selected.r === r && state.selected.c === c) sq.classList.add("selected");
       const legal = state.legalMovesForSelected.find((m) => m.toR === r && m.toC === c);
       if (legal) sq.classList.add(legal.capture ? "capture" : "legal");
@@ -245,16 +327,18 @@ function render() {
     }
   }
 
-  turnLabelEl.textContent = state.turn === "w" ? "White" : "Black";
+  turnLabelEl.textContent = state.turn === "w" ? "You" : "Computer";
   levelLabelEl.textContent = AI_LEVELS[state.level].label;
   statusLabelEl.textContent = state.status;
-  capturedByWhiteEl.textContent = state.capturedByWhite.map((p) => PIECE_SYMBOLS[p]).join(" ");
-  capturedByBlackEl.textContent = state.capturedByBlack.map((p) => PIECE_SYMBOLS[p]).join(" ");
-  resignBtn.disabled = state.gameOver || state.aiThinking;
+  capturedByWhiteEl.textContent = state.capturedByWhite.map((p) => PIECE_SYMBOLS[p]).join(" ") || "—";
+  capturedByBlackEl.textContent = state.capturedByBlack.map((p) => PIECE_SYMBOLS[p]).join(" ") || "—";
+  resignBtn.disabled = !state.isActive || state.gameOver || state.aiThinking;
   levelSelectEl.disabled = state.aiThinking;
   timeSelectEl.disabled = state.aiThinking;
   updateAdvantageBar();
   updateClockUI();
+  updateOptionButtons();
+  updateMoveHistoryUI();
 }
 
 function showGameOverModal(title, text) {
@@ -280,7 +364,7 @@ function endGame(statusText, modalTitle, modalText) {
 }
 
 function onSquareClick(e) {
-  if (state.gameOver || state.aiThinking || state.turn !== "w") return;
+  if (!state.isActive || state.gameOver || state.aiThinking || state.turn !== "w") return;
 
   const square = e.currentTarget;
   const r = Number(square.dataset.row);
@@ -334,7 +418,7 @@ function afterMoveFlow() {
   else if (isInsufficientMaterial(state.board)) {
     endGame("Draw by insufficient material.", "Draw", "Insufficient material.");
     return;
-  } else state.status = opp === "w" ? "White to move" : "Black to move";
+  } else state.status = opp === "w" ? "Your move" : "Computer to move";
 
   state.turn = opp;
   state.lastTickMs = Date.now();
@@ -688,12 +772,12 @@ async function chooseAiMoveAsync(s, token) {
 
     if (cfg.aspiration && Number.isFinite(bestScore) && depth >= 3) {
       const margin = 60 + depth * 8;
-      result = searchRoot(s, depth, start, cfg.timeLimitMs, cfg, bestScore - margin, bestScore + margin);
+      result = await searchRoot(s, depth, start, cfg.timeLimitMs, cfg, token, bestScore - margin, bestScore + margin);
       if (result.completed && (result.score <= bestScore - margin || result.score >= bestScore + margin)) {
-        result = searchRoot(s, depth, start, cfg.timeLimitMs, cfg, -Infinity, Infinity);
+        result = await searchRoot(s, depth, start, cfg.timeLimitMs, cfg, token, -Infinity, Infinity);
       }
     } else {
-      result = searchRoot(s, depth, start, cfg.timeLimitMs, cfg, -Infinity, Infinity);
+      result = await searchRoot(s, depth, start, cfg.timeLimitMs, cfg, token, -Infinity, Infinity);
     }
 
     if (!result || !result.completed) break;
@@ -704,7 +788,7 @@ async function chooseAiMoveAsync(s, token) {
       state.status = `Black (${cfg.label}) thinking... depth ${depth}`;
       render();
     }
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await yieldToBrowser();
   }
 
   if (cfg.jitter > 0) {
@@ -742,15 +826,18 @@ function chooseOpeningBookMove(s, legalMoves) {
   return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
-function searchRoot(s, depth, startTime, timeLimitMs, cfg, alphaInit = -Infinity, betaInit = Infinity) {
+async function searchRoot(s, depth, startTime, timeLimitMs, cfg, token, alphaInit = -Infinity, betaInit = Infinity) {
   const moves = generateAllLegalMoves(s, "b");
   orderMoves(s, moves, "b", 0, getHashMove(s, "b", depth));
   let alpha = alphaInit;
   let beta = betaInit;
   let bestMove = null;
   let bestScore = -Infinity;
+  let sliceStartedAt = performance.now();
 
-  for (const move of moves) {
+  for (let i = 0; i < moves.length; i += 1) {
+    const move = moves[i];
+    if (token !== aiTurnToken || state.gameOver) return { completed: false, move: bestMove, score: bestScore };
     if (performance.now() - startTime > timeLimitMs) return { completed: false, move: bestMove, score: bestScore };
     const test = cloneState(s);
     applyMove(test, move, true);
@@ -761,6 +848,12 @@ function searchRoot(s, depth, startTime, timeLimitMs, cfg, alphaInit = -Infinity
       bestMove = move;
     }
     if (score > alpha) alpha = score;
+
+    const spentInSlice = performance.now() - sliceStartedAt;
+    if (i < moves.length - 1 && spentInSlice >= 12) {
+      await yieldToBrowser();
+      sliceStartedAt = performance.now();
+    }
   }
   return { completed: true, move: bestMove, score: bestScore };
 }
@@ -1206,7 +1299,7 @@ function startNewGame() {
   aiTurnToken += 1;
   const level = levelSelectEl.value in AI_LEVELS ? levelSelectEl.value : "medium";
   const seconds = Number(timeSelectEl.value) || 300;
-  state = createInitialState(level, seconds);
+  state = createInitialState(level, seconds, true);
   aiTable = new Map();
   killerMoves = {};
   historyHeuristic = {};
@@ -1217,15 +1310,52 @@ function startNewGame() {
   render();
 }
 
+function loadReadyGame() {
+  const level = levelSelectEl.value in AI_LEVELS ? levelSelectEl.value : "medium";
+  const seconds = Number(timeSelectEl.value) || 300;
+  state = createInitialState(level, seconds, false);
+  state.status = "Click Start Game to begin.";
+  hideGameOverModal();
+  stopAiClockTicker();
+  stopClockTicker();
+  render();
+}
+
 newGameBtn.addEventListener("click", startNewGame);
 resignBtn.addEventListener("click", () => {
-  if (state.gameOver) return;
+  if (!state.isActive || state.gameOver) return;
   endGame("White resigned. Black wins.", "Black Wins", "White resigned.");
 });
+
+for (const button of levelOptionEls) {
+  button.addEventListener("click", () => {
+    if (levelSelectEl.disabled || levelSelectEl.value === button.dataset.levelOption) return;
+    levelSelectEl.value = button.dataset.levelOption;
+    levelSelectEl.dispatchEvent(new Event("change"));
+  });
+}
+
+for (const button of timeOptionEls) {
+  button.addEventListener("click", () => {
+    if (timeSelectEl.disabled || timeSelectEl.value === button.dataset.timeOption) return;
+    timeSelectEl.value = button.dataset.timeOption;
+    timeSelectEl.dispatchEvent(new Event("change"));
+  });
+}
+
+for (const button of themeOptionEls) {
+  button.addEventListener("click", () => {
+    applyTheme(button.dataset.themeOption);
+  });
+}
 
 levelSelectEl.addEventListener("change", () => {
   if (!state) return;
   state.level = levelSelectEl.value in AI_LEVELS ? levelSelectEl.value : "medium";
+  if (!state.isActive) {
+    render();
+    return;
+  }
   if (!state.gameOver) {
     state.status = `Level switched to ${AI_LEVELS[state.level].label}.`;
     render();
@@ -1233,7 +1363,16 @@ levelSelectEl.addEventListener("change", () => {
 });
 
 timeSelectEl.addEventListener("change", () => {
-  if (!state || state.gameOver) return;
+  if (!state) return;
+  if (!state.isActive) {
+    const seconds = Number(timeSelectEl.value) || 300;
+    state.timeControlSec = seconds;
+    state.clocks = { w: seconds, b: seconds };
+    state.status = "Click Start Game to begin.";
+    render();
+    return;
+  }
+  if (state.gameOver) return;
   state.status = "Time control will apply on New Game.";
   render();
 });
@@ -1250,4 +1389,5 @@ gameOverModalEl.addEventListener("click", (e) => {
   if (e.target === gameOverModalEl) hideGameOverModal();
 });
 
-startNewGame();
+applyTheme(getSavedTheme());
+loadReadyGame();

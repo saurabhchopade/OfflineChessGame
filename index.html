@@ -7,81 +7,109 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <main class="app">
-    <section class="panel top-panel">
-      <h1>Offline Chess</h1>
-      <p class="subtitle">Human (White) vs Computer (Black)</p>
-      <div class="status-row">
-        <div><strong>Turn:</strong> <span id="turnLabel">White</span></div>
-        <div><strong>Level:</strong> <span id="levelLabel">Medium</span></div>
-        <div><strong>Status:</strong> <span id="statusLabel">White to move</span></div>
+  <main class="app-shell">
+    <header class="hero">
+      <h1 class="brand"><span class="brand-icon">♟</span> CHESS</h1>
+      <p class="subtitle">Human vs Computer</p>
+      <div class="theme-switch" role="group" aria-label="Theme mode">
+        <button type="button" class="theme-btn" data-theme-option="dark" aria-pressed="true">Night</button>
+        <button type="button" class="theme-btn" data-theme-option="light" aria-pressed="false">Light</button>
       </div>
-      <div class="advantage-wrap">
-        <div class="advantage-labels">
-          <span id="whiteWinPct">White 50%</span>
-          <span id="blackWinPct">Black 50%</span>
-        </div>
-        <div class="advantage-bar" aria-label="Winning chance bar">
-          <div id="whiteAdvFill" class="advantage-fill"></div>
-        </div>
-      </div>
-      <div class="clock-row">
-        <div class="clock-card" id="whiteClockCard">
-          <span class="clock-name">White</span>
-          <span id="whiteClock" class="clock-time">05:00</span>
-        </div>
-        <div class="clock-card" id="blackClockCard">
-          <span class="clock-name">Black</span>
+    </header>
+
+    <section class="arena">
+      <aside class="rail rail-left">
+        <section class="glass-card clock-panel" id="blackClockCard">
+          <span class="panel-kicker">Computer (Black)</span>
           <span id="blackClock" class="clock-time">05:00</span>
+          <span class="panel-note">AI pressure</span>
+        </section>
+
+        <section class="glass-card stat-panel">
+          <span class="panel-kicker">Advantage</span>
+          <div class="advantage-wrap">
+            <div class="advantage-bar" aria-label="Winning chance bar">
+              <div id="whiteAdvFill" class="advantage-fill"></div>
+            </div>
+            <div class="advantage-labels">
+              <span id="whiteWinPct">White 50%</span>
+              <span id="blackWinPct">Black 50%</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="glass-card capture-panel">
+          <span class="panel-kicker">Captured</span>
+          <div class="capture-group">
+            <span class="mini-label">By You</span>
+            <div id="capturedByWhite" class="captured-list"></div>
+          </div>
+          <div class="capture-group">
+            <span class="mini-label">By Computer</span>
+            <div id="capturedByBlack" class="captured-list"></div>
+          </div>
+        </section>
+
+        <section class="glass-card history-panel">
+          <span class="panel-kicker">History</span>
+          <div id="moveHistoryList" class="history-list">No moves yet</div>
+        </section>
+      </aside>
+
+      <section class="center-stage">
+        <div class="board-frame">
+          <div id="board" class="board" aria-label="Chess board"></div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section class="game-area">
-      <div class="board-wrap">
-        <div id="board" class="board" aria-label="Chess board"></div>
-      </div>
+      <aside class="rail rail-right">
+        <section class="glass-card clock-panel player-focus" id="whiteClockCard">
+          <span class="panel-kicker">You (White)</span>
+          <span id="whiteClock" class="clock-time">05:00</span>
+          <span id="statusLabel" class="panel-note accent-note">Click Start Game to begin.</span>
+        </section>
 
-      <aside class="side-panel">
-        <div class="control-group">
-          <label for="levelSelect">AI Level</label>
-          <select id="levelSelect" class="input">
+        <section class="glass-card status-panel">
+          <span class="panel-kicker">Status</span>
+          <div class="status-stack">
+            <span class="status-main">Turn: <span id="turnLabel">White</span></span>
+            <span class="status-sub">Level: <span id="levelLabel">Medium</span></span>
+          </div>
+        </section>
+
+        <section class="glass-card control-panel">
+          <span class="panel-kicker">AI Level</span>
+          <div class="option-stack" id="levelOptions">
+            <button type="button" class="option-btn" data-level-option="easy">Easy</button>
+            <button type="button" class="option-btn" data-level-option="medium">Medium</button>
+            <button type="button" class="option-btn" data-level-option="hard">Hard</button>
+          </div>
+          <select id="levelSelect" class="sr-only" aria-hidden="true" tabindex="-1">
             <option value="easy">Easy</option>
             <option value="medium" selected>Medium</option>
             <option value="hard">Hard</option>
           </select>
-        </div>
+        </section>
 
-        <div class="control-group">
-          <label for="timeSelect">Time Control</label>
-          <select id="timeSelect" class="input">
+        <section class="glass-card control-panel">
+          <span class="panel-kicker">Time Control</span>
+          <div class="option-stack" id="timeOptions">
+            <button type="button" class="option-btn" data-time-option="120">2 Min</button>
+            <button type="button" class="option-btn" data-time-option="180">3 Min</button>
+            <button type="button" class="option-btn" data-time-option="300">5 Min</button>
+            <button type="button" class="option-btn" data-time-option="600">10 Min</button>
+          </div>
+          <select id="timeSelect" class="sr-only" aria-hidden="true" tabindex="-1">
             <option value="120">2 Minutes</option>
             <option value="180">3 Minutes</option>
             <option value="300" selected>5 Minutes</option>
             <option value="600">10 Minutes</option>
           </select>
-        </div>
+        </section>
 
-        <button id="newGameBtn" class="btn">New Game</button>
-        <button id="resignBtn" class="btn btn-danger">Resign</button>
-
-        <div class="capture-block">
-          <h2>Captured by White</h2>
-          <div id="capturedByWhite" class="captured-list"></div>
-        </div>
-
-        <div class="capture-block">
-          <h2>Captured by Black</h2>
-          <div id="capturedByBlack" class="captured-list"></div>
-        </div>
-
-        <div class="legend">
-          <h2>Tips</h2>
-          <ul>
-            <li>Click a white piece to select.</li>
-            <li>Click a highlighted square to move.</li>
-            <li>Black moves automatically.</li>
-          </ul>
+        <div class="action-row">
+          <button id="newGameBtn" class="btn btn-primary">Start Game</button>
+          <button id="resignBtn" class="btn btn-secondary">Resign</button>
         </div>
       </aside>
     </section>
@@ -92,8 +120,8 @@
       <h2 id="modalTitle">Game Over</h2>
       <p id="modalText">Result</p>
       <div class="modal-actions">
-        <button id="modalNewGameBtn" class="btn">Play Again</button>
-        <button id="modalCloseBtn" class="btn btn-danger">Close</button>
+        <button id="modalNewGameBtn" class="btn btn-primary">Play Again</button>
+        <button id="modalCloseBtn" class="btn btn-secondary">Close</button>
       </div>
     </div>
   </div>
